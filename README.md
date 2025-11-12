@@ -43,6 +43,8 @@ from transformers import BitsAndBytesConfig
 import torch
 import re
 
+tea = Tea.from_pretrained("PickyBinders/tea")
+device = next(tea.parameters()).device
 tokenizer = AutoTokenizer.from_pretrained("facebook/esm2_t33_650M_UR50D")
 bnb_config = BitsAndBytesConfig(load_in_4bit=True) if torch.cuda.is_available() else None
 esm2 = AutoModel.from_pretrained(
@@ -50,12 +52,11 @@ esm2 = AutoModel.from_pretrained(
         torch_dtype="auto",
         quantization_config=bnb_config,
         add_pooling_layer=False,
-    )
+    ).to(device)
 esm2.eval()
 sequence_examples = ["PRTEINO", "SEQWENCE"]
 sequence_examples = [" ".join(list(re.sub(r"[UZOBJ]", "X", sequence))) for sequence in sequence_examples]
 ids = tokenizer.batch_encode_plus(sequence_examples, add_special_tokens=True, padding="longest")
-device = next(esm2.parameters()).device
 input_ids = torch.tensor(ids['input_ids']).to(device)
 attention_mask = torch.tensor(ids['attention_mask']).to(device)
 with torch.no_grad():
