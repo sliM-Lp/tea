@@ -70,9 +70,9 @@ def run_batch(
     tokenizer,
     esm2,
     tea,
-    save_avg_entropy,
-    save_logits,
-    save_residue_entropy,
+    save_avg_entropy=False,
+    save_logits=False,
+    save_residue_entropy=False,
 ):
     device = next(tea.parameters()).device
     try:
@@ -122,12 +122,20 @@ def run_batch(
         if "cuda" in device.type:
             torch.cuda.empty_cache()
         error_type = "CUDA" if isinstance(e, torch.cuda.OutOfMemoryError) else "CPU"
+        if len(sequences) == 1:
+            logger.error(
+                f"{error_type} out of memory error for single sequence. "
+                f"Sequence is too large to process even with batch size 1. "
+                f"Skipping sequence: {sequences[0][0]}"
+            )
+            return
+        new_batch_size = len(sequences) // 2
         logger.info(
-            f"{error_type} out of memory error for batch size {len(sequences)}. Running with batch size divided by 2 ({len(sequences) // 2})"
+            f"{error_type} out of memory error for batch size {len(sequences)}. Running with batch size divided by 2 ({new_batch_size})"
         )
-        for i in range(0, len(sequences), len(sequences) // 2):
+        for i in range(0, len(sequences), new_batch_size):
             yield from run_batch(  # Use yield from for recursive calls
-                sequences[i : i + len(sequences) // 2],
+                sequences[i : i + new_batch_size],
                 tokenizer,
                 esm2,
                 tea,
@@ -290,18 +298,18 @@ def main():
         f"Output file {args.output_file} already exists, refusing to overwrite"
     )
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    logger.info(f"Loading model from PickyBinders/tea")
+    logger.info("Loading model from PickyBinders/tea")
     tea = Tea.from_pretrained("PickyBinders/tea").to(device)
     tea.eval()
-    logger.info(f"Loading model from facebook/esm2_t33_650M_UR50D")
+    logger.info("Loading model from facebook/esm2_t33_650M_UR50D")
     tokenizer = AutoTokenizer.from_pretrained("facebook/esm2_t33_650M_UR50D")
     if "cuda" in device.type:
-        logger.info(f"Using CUDA")
+        logger.info("Using CUDA")
         from transformers import BitsAndBytesConfig
 
         bnb_config = BitsAndBytesConfig(load_in_4bit=True)
     else:
-        logger.info(f"Using CPU")
+        logger.info("Using CPU")
         bnb_config = None
     esm2 = AutoModel.from_pretrained(
         "facebook/esm2_t33_650M_UR50D",
@@ -323,7 +331,7 @@ def main():
         args.lowercase_entropy,
         args.entropy_threshold,
     )
-    logger.info(f"Conversion complete")
+    logger.info("Conversion complete")
     message = f"Saved sequences to {args.output_file}"
     if args.lowercase_entropy:
         message += f"\nLowercased letters have entropy > {args.entropy_threshold}"
