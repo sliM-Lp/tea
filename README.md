@@ -7,7 +7,7 @@ This repository contains the code accompanying our pre-print (link coming soon).
 ## Installation
 
 ```bash
-pip install git+https://github.com/PickyBinders/tea.git
+pip install git+https://github.com/sliM-Lp/tea.git
 ```
 
 ## Sequence Conversion with TEA
