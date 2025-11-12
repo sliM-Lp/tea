@@ -46,21 +46,24 @@ BATCH_SIZES = {
     5000: 4,
 }
 
-GPU_TIME_ESTIMATES = {50: 0.0048788634128868,
- 100: 0.0096358241979032,
- 200: 0.0195782056078314,
- 300: 0.0300744888372719,
- 400: 0.0410776803269982,
- 500: 0.051343567110598,
- 600: 0.0632535872980952,
- 700: 0.0756181448698043,
- 800: 0.0886568557471036,
- 900: 0.1022435456514358,
- 1000: 0.1136764369904995,
- 2000: 0.2711546048521995,
- 3000: 0.4787218451499939,
- 4000: 0.7247123420238495,
- 5000: 1.0142204642295838}
+GPU_TIME_ESTIMATES = {
+    50: 0.0048788634128868,
+    100: 0.0096358241979032,
+    200: 0.0195782056078314,
+    300: 0.0300744888372719,
+    400: 0.0410776803269982,
+    500: 0.051343567110598,
+    600: 0.0632535872980952,
+    700: 0.0756181448698043,
+    800: 0.0886568557471036,
+    900: 0.1022435456514358,
+    1000: 0.1136764369904995,
+    2000: 0.2711546048521995,
+    3000: 0.4787218451499939,
+    4000: 0.7247123420238495,
+    5000: 1.0142204642295838,
+}
+
 
 def run_batch(
     sequences,
@@ -123,7 +126,7 @@ def run_batch(
             f"{error_type} out of memory error for batch size {len(sequences)}. Running with batch size divided by 2 ({len(sequences) // 2})"
         )
         for i in range(0, len(sequences), len(sequences) // 2):
-            yield from run_batch( # Use yield from for recursive calls
+            yield from run_batch(  # Use yield from for recursive calls
                 sequences[i : i + len(sequences) // 2],
                 tokenizer,
                 esm2,
@@ -159,24 +162,32 @@ def convert_sequences(
         if not found:
             length_groups[10000].append((header, seq))
         num_sequences += 1
-    buffer_time = 60 # 1 minute buffer
-    total_time_estimate = sum(GPU_TIME_ESTIMATES.get(seq_len, 1) * len(group) for seq_len, group in length_groups.items()) + buffer_time
+    buffer_time = 60  # 1 minute buffer
+    total_time_estimate = (
+        sum(
+            GPU_TIME_ESTIMATES.get(seq_len, 1) * len(group)
+            for seq_len, group in length_groups.items()
+        )
+        + buffer_time
+    )
     device = next(tea.parameters()).device
     if "cuda" in device.type:
-        if total_time_estimate < 3600: # Less than an hour
+        if total_time_estimate < 3600:  # Less than an hour
             time_str = f"{total_time_estimate / 60:.2f} minutes"
-        else: # An hour or more
+        else:  # An hour or more
             time_str = f"{total_time_estimate / 3600:.2f} hours"
         logger.info(f"Estimated time to complete conversion: {time_str}")
     logits_dict = dict()
     residue_entropy_dict = dict()
-    logger.info(f"Processing {num_sequences} sequences in total, across {len(length_groups)} length groups")
+    logger.info(
+        f"Processing {num_sequences} sequences in total, across {len(length_groups)} length groups"
+    )
     disable_tqdm = logger.getEffectiveLevel() > logging.INFO
 
     with open(output_file, "w") as f:
         for s, (seq_len, group) in enumerate(length_groups.items()):
             batch_size = BATCH_SIZES.get(seq_len, 1)
-            total_batches = (len(group) + batch_size - 1) // batch_size            
+            total_batches = (len(group) + batch_size - 1) // batch_size
             for i in tqdm(
                 range(0, len(group), batch_size),
                 desc=f"Max. length {seq_len}",
@@ -228,16 +239,56 @@ def main():
     import argparse
 
     parser = argparse.ArgumentParser()
-    parser.add_argument("-f", "--fasta_file", type=Path, required=True, help="Input FASTA file containing protein amino acid sequences")
-    parser.add_argument("-o", "--output_file", type=Path, required=True, help="Output FASTA file for generated tea sequences")
-    parser.add_argument("-s", "--save_logits", action="store_true", help="Save per-residue logits to .pt file")
-    parser.add_argument("-e", "--save_avg_entropy", action="store_true", help="Save average entropy values in FASTA identifiers")
-    parser.add_argument("-r", "--save_residue_entropy", action="store_true", help="Save per-residue entropy values to .pt file")
-    parser.add_argument("-l", "--lowercase_entropy", action="store_true", help="Save residues with entropy > threshold in lowercase")
-    parser.add_argument("-t", "--entropy_threshold", type=float, default=0.3, help="Entropy threshold for lowercase conversion")
+    parser.add_argument(
+        "-f",
+        "--fasta_file",
+        type=Path,
+        required=True,
+        help="Input FASTA file containing protein amino acid sequences",
+    )
+    parser.add_argument(
+        "-o",
+        "--output_file",
+        type=Path,
+        required=True,
+        help="Output FASTA file for generated tea sequences",
+    )
+    parser.add_argument(
+        "-s",
+        "--save_logits",
+        action="store_true",
+        help="Save per-residue logits to .pt file",
+    )
+    parser.add_argument(
+        "-e",
+        "--save_avg_entropy",
+        action="store_true",
+        help="Save average entropy values in FASTA identifiers",
+    )
+    parser.add_argument(
+        "-r",
+        "--save_residue_entropy",
+        action="store_true",
+        help="Save per-residue entropy values to .pt file",
+    )
+    parser.add_argument(
+        "-l",
+        "--lowercase_entropy",
+        action="store_true",
+        help="Save residues with entropy > threshold in lowercase",
+    )
+    parser.add_argument(
+        "-t",
+        "--entropy_threshold",
+        type=float,
+        default=0.3,
+        help="Entropy threshold for lowercase conversion",
+    )
 
     args = parser.parse_args()
-    assert not args.output_file.exists(), f"Output file {args.output_file} already exists, refusing to overwrite"
+    assert not args.output_file.exists(), (
+        f"Output file {args.output_file} already exists, refusing to overwrite"
+    )
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     logger.info(f"Loading model from PickyBinders/tea")
     tea = Tea.from_pretrained("PickyBinders/tea").to(device)
@@ -247,16 +298,17 @@ def main():
     if "cuda" in device.type:
         logger.info(f"Using CUDA")
         from transformers import BitsAndBytesConfig
+
         bnb_config = BitsAndBytesConfig(load_in_4bit=True)
     else:
         logger.info(f"Using CPU")
         bnb_config = None
     esm2 = AutoModel.from_pretrained(
-            "facebook/esm2_t33_650M_UR50D",
-            dtype="auto",
-            quantization_config=bnb_config,
-            add_pooling_layer=False,
-        ).to(device)
+        "facebook/esm2_t33_650M_UR50D",
+        dtype="auto",
+        quantization_config=bnb_config,
+        add_pooling_layer=False,
+    ).to(device)
     esm2.eval()
     logger.info(f"Converting sequences from {args.fasta_file} to {args.output_file}")
     convert_sequences(
@@ -280,6 +332,7 @@ def main():
     if args.save_residue_entropy:
         message += f"\nSaved residue entropy to {args.output_file.parent / f'{args.output_file.stem}_residue_entropy.pt'}"
     logger.info(message)
+
 
 if __name__ == "__main__":
     main()

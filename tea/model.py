@@ -6,15 +6,13 @@ from transformers import BitsAndBytesConfig
 from torch.nn import functional as F
 
 
-class Tea(nn.Module, PyTorchModelHubMixin, 
-          repo_url="tea", 
-          license="mit"):
+class Tea(nn.Module, PyTorchModelHubMixin, repo_url="tea", license="mit"):
     """
-    The Embedding-based Alphabet (tea) model for converting input pLMs embeddings into sequences.
+    The Embedding Alphabet (tea) model for converting input pLMs embeddings into tea sequences.
 
     This model consists of two linear layers, normalization, and dropout,
-    followed by a codebook-based decoder. It provides methods to compute Shannon 
-    entropy over the output distribution and to convert model outputs into character 
+    followed by a codebook-based decoder. It provides methods to compute Shannon
+    entropy over the output distribution and to convert model outputs into character
     sequences.
 
     Args:
@@ -24,6 +22,7 @@ class Tea(nn.Module, PyTorchModelHubMixin,
         dropout_prob (float): Dropout probability for regularization.
         ignore_token_ids (list[int]): Token ids to ignore when constructing sequences.
     """
+
     def __init__(
         self,
         representation_size: int,
@@ -45,7 +44,7 @@ class Tea(nn.Module, PyTorchModelHubMixin,
         self.eps = 1e-8  # Add epsilon for numerical stability
 
         characters = list("ACDEFGHIKLMNPQRSTVWYacdefghiklmnpqrstvwy")
-        self.characters = characters[:self.codebook_size]
+        self.characters = characters[: self.codebook_size]
 
     def forward(self, x):
         x = self.dense(x)
@@ -58,9 +57,7 @@ class Tea(nn.Module, PyTorchModelHubMixin,
     def compute_shannon_entropy(self, logits):
         # Convert logits to probabilities
         probs = F.softmax(logits, dim=-1)
-        entropy = -torch.sum(
-            probs * torch.log(probs + self.eps), dim=-1
-        ) / torch.log(
+        entropy = -torch.sum(probs * torch.log(probs + self.eps), dim=-1) / torch.log(
             torch.tensor(self.codebook_size, dtype=probs.dtype, device=probs.device)
         )
         return entropy
@@ -77,35 +74,35 @@ class Tea(nn.Module, PyTorchModelHubMixin,
     ):
         if logits is None:
             logits = self(embeddings)
-        
+
         # Build a mask to ignore specified token ids
         ignore_mask = torch.ones_like(input_ids, dtype=torch.bool)
         for token_id in self.ignore_token_ids:
-            ignore_mask &= (input_ids != token_id)
-        
+            ignore_mask &= input_ids != token_id
+
         # Get token predictions
         predicted_indices = torch.argmax(logits, dim=-1)
-        
+
         sequences = []
         logits_list = []
         residue_entropy_list = []
         avg_entropy_list = []
-        
+
         # Iterate over all sequences in the batch
         for seq_idx, seq_logits, mask in zip(predicted_indices, logits, ignore_mask):
             filtered_indices = seq_idx[mask]
             filtered_logits = seq_logits[mask]
-            sequence = ''.join(self.characters[idx.item()] for idx in filtered_indices)
+            sequence = "".join(self.characters[idx.item()] for idx in filtered_indices)
             sequences.append(sequence)
             logits_list.append(filtered_logits)
             entropies = self.compute_shannon_entropy(filtered_logits)
             residue_entropy_list.append(entropies)
             avg_entropy_list.append(entropies.mean().item())
-        
+
         # Decide on return type
         if not (return_avg_entropy or return_logits or return_residue_entropy):
             return sequences
-        
+
         result = {"sequences": sequences}
         if return_avg_entropy:
             result["avg_entropy"] = avg_entropy_list
