@@ -1,91 +1,90 @@
-# The Embedding-based Alphabet (TEA)
+# The Embedding Alphabet (TEA)
 
 ![Model Architecture](Model_Architecture.png)
 
 This repository contains the code accompanying our pre-print (link coming soon).
 
-It includes:
-- [Sequence conversion with AlphaBeta](#sequence-conversion-with-alphabeta)
-- [Sequence searches with MMseqs2](#running-searches-with-MMseqs2)
-
-## Environment setup
-
-Download [mamba](https://github.com/conda-forge/miniforge#mambaforge)
+## Installation
 
 ```bash
-chmod +x Mambaforge.sh
-./Mambaforge.sh
+pip install git+https://github.com/PickyBinders/tea.git
 ```
 
+## Sequence Conversion with TEA
+
+The `tea_convert` command takes protein sequences from a FASTA file and generates new tea-FASTA. It supports confidence-based sequence output where low-confidence positions are displayed in lowercase, and has options for saving logits and entropy. If `--save_avg_entropy` is set, the FASTA identifiers will contain the average entropy of the sequence in the format `<key>|avg_entropy=<avg_entropy>`.
+
 ```bash
-module load CUDA/12.1.1
-mamba create -n tea
-mamba activate tea
-mamba install pip
-mamba install -c bioconda usalign
+usage: tea_convert [-h] -f FASTA_FILE -o OUTPUT_FILE [-s] [-e] [-r] [-l] [-t ENTROPY_THRESHOLD]
 
-pip install lightning torch torch-geometric tensorboard nbformat tqdm wandb pandas biopython scikit-learn numba matplotlib seaborn 'jsonargparse[signatures]' transformers bitsandbytes peft pyarrow sentencepiece deepspeed fair-esm biotite
-
-pip install .
+options:
+  -h, --help            show this help message and exit
+  -f FASTA_FILE, --fasta_file FASTA_FILE
+                        Input FASTA file containing protein amino acid sequences
+  -o OUTPUT_FILE, --output_file OUTPUT_FILE
+                        Output FASTA file for generated tea sequences
+  -s, --save_logits     Save per-residue logits to .pt file
+  -e, --save_avg_entropy
+                        Save average entropy values in FASTA identifiers
+  -r, --save_residue_entropy
+                        Save per-residue entropy values to .pt file
+  -l, --lowercase_entropy
+                        Save residues with entropy > threshold in lowercase
+  -t ENTROPY_THRESHOLD, --entropy_threshold ENTROPY_THRESHOLD
+                        Entropy threshold for lowercase conversion
 ```
 
-# Sequence Conversion with TEA
+### Using the huggingface model
 
-The `convert_sequences.py` script takes protein sequences from a FASTA file and generates new tea-FASTA. It supports confidence-based sequence output where low-confidence positions are displayed in lowercase.
+```python
+from tea.model import Tea
+from transformers import AutoTokenizer, AutoModel
+from transformers import BitsAndBytesConfig
+import torch
+import re
 
-Alphabeta is derived from ESM2 embeddings, which are used for the sequence conversion. The conversion script relies on the ESM-2 model `esm2_t33_650M_UR50D` to generate embeddings. If you have an active internet connection, the script will automatically download the ESM2 model as needed. If not, you will need to download the model manually and cache it locally before running the conversion. For example:
-
-```python -c "from transformers import AutoTokenizer, AutoModel; AutoTokenizer.from_pretrained('facebook/esm2_t33_650M_UR50D'); AutoModel.from_pretrained('facebook/esm2_t33_650M_UR50D')" ```
-
-## Parameters
-
-### Required
-- `--fasta_file`: Input FASTA file containing protein sequences
-- `--output_file`: Output FASTA file for generated sequences
-
-### Optional
-- `--checkpoint_path`: Path to AlphaBeta model checkpoint (.ckpt file)
-- `--include_confidence`: Enable confidence-based lowercase output
-- `--entropy_threshold`: Entropy threshold for lowercase conversion (default: 0.3)
-- `--mask_prob`: Probability of masking input tokens (default: 0.0)
-- `--save_per_residue_logits`: Save per-residue logits to .pt file
-- `--save_avg_entropy`: Save average entropy values to .pt file
-- `--estimate_runtime`: Estimate processing time without running conversion
-- `--timing_results_file`: Path to timing results for batch size optimization
-
-### Output Files
-- `output_sequences.fasta`: Generated protein sequences
-- `output_sequences.fasta.masked`: Number of masked tokens per sequence (if `--mask_prob > 0`)
-- `output_sequences_logits.pt`: Per-residue logits (if `--save_per_residue_logits`)
-- `output_sequences_avg_entropy.pt`: Average entropy values (if `--save_avg_entropy`)
-
-### Basic Usage
-```bash
-python convert_sequences.py \
-    --fasta_file input_sequences.fasta \
-    --output_file output_sequences.fasta
+tokenizer = AutoTokenizer.from_pretrained("facebook/esm2_t33_650M_UR50D")
+bnb_config = BitsAndBytesConfig(load_in_4bit=True) if torch.cuda.is_available() else None
+esm2 = AutoModel.from_pretrained(
+        "facebook/esm2_t33_650M_UR50D",
+        torch_dtype="auto",
+        quantization_config=bnb_config,
+        add_pooling_layer=False,
+    )
+esm2.eval()
+sequence_examples = ["PRTEINO", "SEQWENCE"]
+sequence_examples = [" ".join(list(re.sub(r"[UZOBJ]", "X", sequence))) for sequence in sequence_examples]
+ids = tokenizer.batch_encode_plus(sequence_examples, add_special_tokens=True, padding="longest")
+device = next(esm2.parameters()).device
+input_ids = torch.tensor(ids['input_ids']).to(device)
+attention_mask = torch.tensor(ids['attention_mask']).to(device)
+with torch.no_grad():
+    x = esm2(
+        input_ids=input_ids, attention_mask=attention_mask
+    ).last_hidden_state.to(device)
+    results = tea.to_sequences(embeddings=x, input_ids=input_ids, return_avg_entropy=True, return_logits=False, return_residue_entropy=False)
+results
 ```
 
-### Installing MMseqs2
-```bash
-mamba install -c conda-forge -c bioconda mmseqs2
+## Using tea sequences with MMseqs2
+
+The `matcha.out` substitution matrix is included with the tea package. You can get its path programmatically:
+
+```python
+from tea import get_matrix_path
+matcha_path = get_matrix_path()
+print(f"Matrix path: {matcha_path}")
 ```
 
-#### Basic usage
+Then use it with MMseqs2:
 
 ```bash
-mmseqs easy-search query_alphabeta.fasta target_alphabeta.fasta results.m8 /tmp/mmseqs_tmp \
+mmseqs easy-search tea_query.fasta tea_target.fasta results.m8 tmp/ \
     --comp-bias-corr 0 \
     --mask 0 \
-    --gap-open 12 \
-    --gap-extend 1 \
-    --mask-lower-case 1 \
-    -s 5.7 \
-    --max-seqs 2000 \
-    -e 10000 \
-    --sub-mat alphabeta_matrix_sub_matrix.out \
-    --seed-sub-mat alphabeta_matrix_sub_matrix.out \
-    -v 2
+    --gap-open 18 \
+    --gap-extend 3 \
+    --sub-mat /path/to/matcha.out \
+    --seed-sub-mat /path/to/matcha.out \
+    --exact-kmer-matching 1
 ```
-
-Use as substitution matrix `models/alphabeta_sub_matrix.out`. Add the flag `--exact-kmer-matching 1` for speed improvement with no significant loss in performance expected.

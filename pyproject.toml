@@ -1,0 +1,43 @@
+[project]
+name = "tea"
+version = "0.1.0"
+dependencies = [
+    "biotite>=0.49.0",
+    "torch>=2.0.0",
+    "transformers>=4.30.0",
+    "huggingface_hub>=0.20.0",
+    "bitsandbytes>=0.40.0",
+    "tqdm>=4.64.0",
+    "numpy>=1.21.0",
+    "accelerate>=0.26.0",
+]
+description = "The Embedding Alphabet"
+readme = "README.md"
+requires-python = ">=3.10"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+]
+
+[project.urls]
+Homepage = "https://github.com/PickyBinders/tea"
+Issues = "https://github.com/PickyBinders/tea/issues"
+
+[project.scripts]
+tea_convert = "tea.convert:main"
+
+[build-system]
+build-backend = "setuptools.build_meta"
+requires = [
+    "build == 0.9.0",
+    "setuptools == 65.4.0",
+]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["tea*"]
+namespaces = false
+
+[tool.setuptools.package-data]
+tea = ["matcha.out"]

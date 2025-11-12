@@ -1,7 +1,11 @@
-from setuptools import setup, find_packages
+#!/usr/bin/env python3
+"""
+Setup script for tea library.
+This file is provided for backward compatibility.
+For new projects, use pyproject.toml instead.
+"""
 
-setup(
-    name="tea",
-    version="0.1",
-    packages=find_packages(),
-)
+from setuptools import setup
+
+if __name__ == "__main__":
+    setup()
