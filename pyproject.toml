@@ -11,7 +11,7 @@ dependencies = [
     "numpy>=2.2.0",
     "accelerate>=1.7.0",
 ]
-description = "The Embedding Alphabet"
+description = "The Embedded Alphabet"
 readme = "README.md"
 requires-python = ">=3.10"
 classifiers = [
@@ -28,11 +28,11 @@ Issues = "https://github.com/PickyBinders/tea/issues"
 tea_convert = "tea.convert:main"
 
 [build-system]
-build-backend = "setuptools.build_meta"
 requires = [
     "setuptools",
     "wheel",
 ]
+build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
 where = ["."]
