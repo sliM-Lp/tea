@@ -24,9 +24,9 @@ class Tea(nn.Module, PyTorchModelHubMixin, repo_url="tea", license="mit"):
 
     def __init__(
         self,
-        representation_size: int,
-        hidden_size: int,
-        codebook_size: int,
+        representation_size: int = 1280,
+        hidden_size: int = 1280,
+        codebook_size: int = 20,
         dropout_prob: float = 0.1,
         ignore_token_ids: list[int] = [0, 1, 2],
     ):
