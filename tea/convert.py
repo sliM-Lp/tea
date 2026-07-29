@@ -352,38 +352,43 @@ def main():
         "-l",
         "--save_logits",
         action="store_true",
-        help="Save per-residue logits to .pt file",
+        help="Save per-residue logits to .pt file (default: False)",
     )
     parser.add_argument(
         "-H",
         "--save_avg_entropy",
         action="store_true",
-        help="Save average entropy values in FASTA identifiers",
+        help="Save average entropy values in FASTA identifiers (default: False)",
     )
     parser.add_argument(
         "-r",
         "--save_residue_entropy",
         action="store_true",
-        help="Save per-residue entropy values to .pt file",
+        help="Save per-residue entropy values to .pt file (default: False)",
     )
     parser.add_argument(
         "-c",
         "--lowercase_entropy",
         action="store_true",
-        help="Save residues with entropy > threshold in lowercase",
+        help="Save residues with entropy > threshold in lowercase (default: True)",
     )
     parser.add_argument(
         "-t",
         "--entropy_threshold",
         type=float,
         default=0.25,
-        help="Entropy threshold for lowercase conversion",
+        help="Entropy threshold for lowercase conversion (default: 0.25)",
     )
     parser.add_argument(
         "--timing_output",
         type=str,
         default=None,
-        help="File to save timing information",
+        help="CSV file to save timing information",
+    )
+    parser.add_argument(
+        "--quantize_weights",
+        action="store_true",
+        help="Option to quantize model weights (default: False)",
     )
 
     args = parser.parse_args()
@@ -400,7 +405,16 @@ def main():
         logger.info("Using CUDA")
         from transformers import BitsAndBytesConfig
 
-        bnb_config = BitsAndBytesConfig(load_in_4bit=True)
+        if(args.quantize_weights):
+            logger.info("Quantizing model weights for compute to bfloat16")
+            bnb_config = BitsAndBytesConfig(
+                load_in_4bit=True, 
+                bnb_4bit_compute_dtype=torch.bfloat16
+            )
+        else:
+            bnb_config = BitsAndBytesConfig(
+                load_in_4bit=True, 
+            )
     else:
         logger.info("Using CPU")
         bnb_config = None
