@@ -133,7 +133,7 @@ def run_batch(
             t_forward = batch_timer.time_block() if batch_timer else None
 
             results = tea.to_sequences(
-                embeddings=embeddings,
+                embeddings=embeddings.to(torch.float32),
                 input_ids=batch_tokens,
                 return_avg_entropy=save_avg_entropy,
                 return_logits=save_logits,
@@ -171,7 +171,7 @@ def run_batch(
                 input_ids=batch_tokens, attention_mask=attention_mask
             ).last_hidden_state.to(device)
             results = tea.to_sequences(
-                embeddings=embeddings,
+                embeddings=embeddings.to(torch.float32),
                 input_ids=batch_tokens,
                 return_avg_entropy=save_avg_entropy,
                 return_logits=save_logits,
@@ -420,7 +420,7 @@ def main():
         bnb_config = None
     esm2 = AutoModel.from_pretrained(
         "facebook/esm2_t33_650M_UR50D",
-        dtype="auto",
+        dtype="bfloat16" if args.quantize_weights else "auto",
         quantization_config=bnb_config,
         add_pooling_layer=False,
     ).to(device)
