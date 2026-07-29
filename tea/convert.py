@@ -6,7 +6,38 @@ from transformers import AutoTokenizer, AutoModel
 from collections import defaultdict
 from .model import Tea
 import logging
+
 from tqdm import tqdm
+import time
+import csv
+import json
+
+class BatchTimer:
+    """Accumulates per-batch timing records and writes them to disk."""
+    def __init__(self, output_path, device):
+        self.output_path = output_path
+        self.device = device
+        self.records = []
+
+    def _sync(self):
+        if self.device.type == "cuda":
+            torch.cuda.synchronize()
+
+    def time_block(self):
+        self._sync()
+        return time.perf_counter()
+
+    def record(self, **kwargs):
+        self.records.append(kwargs)
+
+    def save(self):
+        if not self.records:
+            return
+        with open(self.output_path, "w", newline="") as f:
+            writer = csv.DictWriter(f, fieldnames=list(self.records[0].keys()))
+            writer.writeheader()
+            writer.writerows(self.records)
+
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -64,7 +95,6 @@ GPU_TIME_ESTIMATES = {
     5000: 1.0142204642295838,
 }
 
-
 def run_batch(
     sequences,
     tokenizer,
@@ -73,9 +103,59 @@ def run_batch(
     save_avg_entropy=False,
     save_logits=False,
     save_residue_entropy=False,
+    batch_timer=None,
 ):
     device = next(tea.parameters()).device
+
     try:
+        seq_lens = [len(seq) for _, seq in sequences]
+
+        t_start = batch_timer.time_block() if batch_timer else None
+
+        spaced_seqs = [
+            " ".join(list(re.sub(r"[UZOBJ]", "X", seq))) for _, seq in sequences
+        ]
+        batch = tokenizer.batch_encode_plus(
+            spaced_seqs, add_special_tokens=True, padding="longest"
+        )
+        if len(batch) == 0:
+            return None
+        batch_tokens = torch.tensor(batch["input_ids"]).to(device)
+        attention_mask = torch.tensor(batch["attention_mask"]).to(device)
+
+        t_tokenized = batch_timer.time_block() if batch_timer else None
+
+        with torch.no_grad():
+            embeddings = esm2(
+                input_ids=batch_tokens, attention_mask=attention_mask
+            ).last_hidden_state.to(device)
+
+            t_forward = batch_timer.time_block() if batch_timer else None
+
+            results = tea.to_sequences(
+                embeddings=embeddings,
+                input_ids=batch_tokens,
+                return_avg_entropy=save_avg_entropy,
+                return_logits=save_logits,
+                return_residue_entropy=save_residue_entropy,
+            )
+
+            t_tea = batch_timer.time_block() if batch_timer else None
+
+        if batch_timer:
+            batch_timer.record(
+                num_sequences=len(sequences),
+                seq_len_min=min(seq_lens),
+                seq_len_max=max(seq_lens),
+                seq_len_mean=sum(seq_lens) / len(seq_lens),
+                padded_len=len(batch_tokens[0]),
+                elapsed_tokenize=t_tokenized - t_start,
+                elapsed_forward=t_forward - t_tokenized,
+                elapsed_tea=t_tea - t_forward,
+                elapsed_total=t_tea - t_start,
+            )
+
+        # Remaining unchanged
         spaced_seqs = [
             " ".join(list(re.sub(r"[UZOBJ]", "X", seq))) for _, seq in sequences
         ]
@@ -156,7 +236,11 @@ def convert_sequences(
     save_residue_entropy=False,
     lowercase_entropy=True,
     entropy_lowercase_threshold=0.3,
+    benchmark_output=None,
 ):
+    device = next(tea.parameters()).device
+    batch_timer = BatchTimer(benchmark_output, device) if benchmark_output else None
+
     length_groups = defaultdict(list)
     num_sequences = 0
     for header, seq in fasta.FastaFile.read(fasta_file).items():
@@ -213,6 +297,7 @@ def convert_sequences(
                     save_avg_entropy,
                     save_logits,
                     save_residue_entropy | lowercase_entropy,
+                    batch_timer=batch_timer,
                 ):
                     for header, result in zip(headers, results_batch):
                         if lowercase_entropy:
@@ -234,6 +319,8 @@ def convert_sequences(
                             logits_dict[header] = result["logits"]
                         if save_residue_entropy:
                             residue_entropy_dict[header] = result["residue_entropy"]
+                if batch_timer:
+                    batch_timer.save()
     if save_logits:
         torch.save(logits_dict, output_file.parent / f"{output_file.stem}_logits.pt")
     if save_residue_entropy:
@@ -292,6 +379,12 @@ def main():
         default=0.25,
         help="Entropy threshold for lowercase conversion",
     )
+    parser.add_argument(
+        "--timing_output",
+        type=str,
+        default=None,
+        help="File to save timing information",
+    )
 
     args = parser.parse_args()
     assert not args.output_file.exists(), (
@@ -330,6 +423,7 @@ def main():
         args.save_residue_entropy,
         args.lowercase_entropy,
         args.entropy_threshold,
+        benchmark_output=args.timing_output,
     )
     logger.info("Conversion complete")
     message = f"Saved sequences to {args.output_file}"
