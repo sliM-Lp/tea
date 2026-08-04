@@ -370,7 +370,7 @@ def main():
         "-c",
         "--lowercase_entropy",
         action="store_true",
-        help="Save residues with entropy > threshold in lowercase (default: True)",
+        help="Save residues with entropy > threshold in lowercase (default: False)",
     )
     parser.add_argument(
         "-t",
@@ -384,6 +384,12 @@ def main():
         type=str,
         default=None,
         help="CSV file to save timing information",
+    )
+    parser.add_argument(
+        "--unload_4bit",
+        default=False,
+        action="store_true",
+        help="Option to not load the model in 4bit precision (default: False)",
     )
     parser.add_argument(
         "--quantize_weights",
@@ -401,7 +407,7 @@ def main():
     tea.eval()
     logger.info("Loading model from facebook/esm2_t33_650M_UR50D")
     tokenizer = AutoTokenizer.from_pretrained("facebook/esm2_t33_650M_UR50D")
-    if "cuda" in device.type:
+    if "cuda" in device.type and not args.unload_4bit:
         logger.info("Using CUDA")
         from transformers import BitsAndBytesConfig
 
@@ -415,6 +421,9 @@ def main():
             bnb_config = BitsAndBytesConfig(
                 load_in_4bit=True, 
             )
+    elif "cuda" in device.type and args.unload_4bit:
+        logger.info("Using CUDA without 4-bit quantization")
+        bnb_config = None
     else:
         logger.info("Using CPU")
         bnb_config = None
