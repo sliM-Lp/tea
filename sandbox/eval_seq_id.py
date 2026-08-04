@@ -70,9 +70,13 @@ fp32_sequences, fp32_entropies = get_sequences(FP32_FASTA_PATH)
 bf16_sequences, bf16_entropies = get_sequences(BF16_FASTA_PATH)
 
 identities = []
+lengths = []
 fp32_entropies_list = []
 bf16_entropies_list = []
 delta_entropies = []
+
+num_in_tail = 0
+num_in_tail_delta_entropy = 0
 
 for key in fp32_sequences.keys():
     
@@ -83,23 +87,42 @@ for key in fp32_sequences.keys():
 
     identity = matches/len(fp32_seq)*100
     identities.append(identity)
+    lengths.append(len(fp32_seq))
     fp32_entropies_list.append(fp32_entropies[key])
     bf16_entropies_list.append(bf16_entropies[key])
-    delta_entropies.append(fp32_entropies[key] - bf16_entropies[key])
+    delta_entropy = fp32_entropies[key] - bf16_entropies[key]
+    delta_entropies.append(delta_entropy)
+
+    if(identity < 90):
+        num_in_tail += 1
+
+    if(delta_entropy < -0.1):
+        num_in_tail_delta_entropy += 1
+
+print(f"Number of sequences in tail (identity < 90%): {num_in_tail}")
+print(f"Number of sequences in tail (delta entropy < -0.1): {num_in_tail_delta_entropy}")
 
 fp32_res = stats.spearmanr(identities, fp32_entropies_list)
+print(f"Spearman correlation between identities and FP32 entropies:")
 print(fp32_res.statistic, fp32_res.pvalue)
 
+print(f"Spearman correlation between identities and BF16 entropies:")
 bf16_res = stats.spearmanr(identities, bf16_entropies_list)
 print(bf16_res.statistic, bf16_res.pvalue)
 
+print(f"Spearman correlation between FP32 and BF16 entropies:")
 entropies_res = stats.spearmanr(fp32_entropies_list, bf16_entropies_list)
 print(entropies_res.statistic, entropies_res.pvalue)
 
+print(f"Spearman correlation between identities and delta entropies:")
 delta_entropies_res = stats.spearmanr(identities, delta_entropies)
 print(delta_entropies_res.statistic, delta_entropies_res.pvalue)
 
-fig, ax = plt.subplots(3, 1, figsize=(8, 12))
+print(f"Spearman correlation between delta entropies and sequence lengths:")
+delta_length_res = stats.spearmanr(delta_entropies, lengths)
+print(delta_length_res.statistic, delta_length_res.pvalue)
+
+fig, ax = plt.subplots(4, 1, figsize=(8, 12))
 
 plot_scatter(
     ax[0], 
@@ -131,6 +154,16 @@ plot_scatter(
     spearman_rho=bf16_res.statistic, 
     pvalue=bf16_res.pvalue,
     hline=0.25
+)
+
+plot_scatter(
+    ax[3],
+    lengths, 
+    delta_entropies, 
+    xlabel='Sequence Length', 
+    ylabel='Delta Entropy (FP32 - BF16)', 
+    spearman_rho=delta_length_res.statistic,
+    pvalue=delta_length_res.pvalue
 )
 
 plt.suptitle('Sequence Identity vs Entropy')
