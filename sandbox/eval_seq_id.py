@@ -64,7 +64,7 @@ def plot_scatter(
 
 
 FP32_FASTA_PATH = "/scicore/home/schwede/pudziu0000/projects/tea/sandbox/multidomain/fp32_r1/sequences_tea.fasta"
-BF16_FASTA_PATH = "/scicore/home/schwede/pudziu0000/projects/tea/sandbox/multidomain/bf16_r1/sequences_tea.fasta"
+BF16_FASTA_PATH = "/scicore/home/schwede/pudziu0000/projects/tea/sandbox/multidomain/nonquantized_r1/sequences_tea.fasta"
 
 fp32_sequences, fp32_entropies = get_sequences(FP32_FASTA_PATH)
 bf16_sequences, bf16_entropies = get_sequences(BF16_FASTA_PATH)
@@ -96,11 +96,11 @@ for key in fp32_sequences.keys():
     if(identity < 90):
         num_in_tail += 1
 
-    if(delta_entropy < -0.1):
+    if(delta_entropy < -0.1 or delta_entropy > 0.1):
         num_in_tail_delta_entropy += 1
 
 print(f"Number of sequences in tail (identity < 90%): {num_in_tail}")
-print(f"Number of sequences in tail (delta entropy < -0.1): {num_in_tail_delta_entropy}")
+print(f"Number of sequences in tail (delta entropy < -0.1 or delta entropy > 0.1): {num_in_tail_delta_entropy}")
 
 fp32_res = stats.spearmanr(identities, fp32_entropies_list)
 print(f"Spearman correlation between identities and FP32 entropies:")
@@ -129,7 +129,7 @@ plot_scatter(
     identities, 
     delta_entropies, 
     xlabel='Sequence Identity (%)', 
-    ylabel='Delta Entropy (FP32 - BF16)', 
+    ylabel='Delta Entropy (FP32 - nonquantized)', 
     spearman_rho=delta_entropies_res.statistic, 
     pvalue=delta_entropies_res.pvalue
 )
@@ -150,7 +150,7 @@ plot_scatter(
     identities, 
     bf16_entropies_list, 
     xlabel='Sequence Identity (%)', 
-    ylabel='BF16 Entropy', 
+    ylabel='Nonquantized Entropy', 
     spearman_rho=bf16_res.statistic, 
     pvalue=bf16_res.pvalue,
     hline=0.25
@@ -161,7 +161,7 @@ plot_scatter(
     lengths, 
     delta_entropies, 
     xlabel='Sequence Length', 
-    ylabel='Delta Entropy (FP32 - BF16)', 
+    ylabel='Delta Entropy (FP32 - nonquantized)', 
     spearman_rho=delta_length_res.statistic,
     pvalue=delta_length_res.pvalue
 )
